@@ -1,0 +1,4 @@
+gTTS
+pygame
+requests
+pyserial

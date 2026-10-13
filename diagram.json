@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "author": "Anonymous",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-arduino-mega", "id": "mega", "top": 120, "left": 60, "attrs": {} },
+    { "type": "wokwi-ili9341", "id": "tft", "top": -140, "left": 180, "attrs": {} },
+    { "type": "wokwi-pushbutton", "id": "emergencyButton", "top": 300, "left": 180, "attrs": { "color": "red", "label": "EMERGENCY" } },
+    { "type": "wokwi-pushbutton", "id": "waterButton", "top": 300, "left": 300, "attrs": { "color": "blue", "label": "WATER" } },
+    { "type": "wokwi-pushbutton", "id": "washroomButton", "top": 380, "left": 180, "attrs": { "color": "green", "label": "WASHROOM" } },
+    { "type": "wokwi-pushbutton", "id": "foodButton", "top": 380, "left": 300, "attrs": { "color": "orange", "label": "FOOD" } }
+  ],
+  "connections": [
+    [ "mega:5V", "tft:VCC", "red", [ "v0" ] ],
+    [ "mega:GND.1", "tft:GND", "black", [ "v0" ] ],
+    [ "mega:53", "tft:CS", "green", [ "v0" ] ],
+    [ "mega:9", "tft:D/C", "green", [ "v0" ] ],
+    [ "mega:8", "tft:RST", "green", [ "v0" ] ],
+    [ "mega:51", "tft:MOSI", "blue", [ "v0" ] ],
+    [ "mega:50", "tft:MISO", "blue", [ "v0" ] ],
+    [ "mega:52", "tft:SCK", "blue", [ "v0" ] ],
+    [ "mega:20", "tft:SDA", "purple", [ "v0" ] ],
+    [ "mega:21", "tft:SCL", "purple", [ "v0" ] ],
+    [ "mega:22", "emergencyButton:1.l", "green", [ "v0" ] ],
+    [ "mega:23", "waterButton:1.l", "blue", [ "v0" ] ],
+    [ "mega:24", "washroomButton:1.l", "green", [ "v0" ] ],
+    [ "mega:25", "foodButton:1.l", "orange", [ "v0" ] ],
+    [ "mega:GND.2", "emergencyButton:2.r", "black", [ "v0" ] ],
+    [ "mega:GND.2", "waterButton:2.r", "black", [ "v0" ] ],
+    [ "mega:GND.2", "washroomButton:2.r", "black", [ "v0" ] ],
+    [ "mega:GND.2", "foodButton:2.r", "black", [ "v0" ] ]
+  ]
+}
