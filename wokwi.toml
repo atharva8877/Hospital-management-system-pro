@@ -1,5 +1,5 @@
 [wokwi]
 version = 1
-firmware = ".pio/build/megaatmega2560/firmware.hex"
-elf = ".pio/build/megaatmega2560/firmware.elf"
+firmware = ".pio/build/esp32dev/firmware.bin"
+elf = ".pio/build/esp32dev/firmware.elf"
 rfc2217ServerPort = 4000

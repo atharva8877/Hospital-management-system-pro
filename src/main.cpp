@@ -3,20 +3,21 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
                                     
-// --- TFT Pin Definitions (from diagram.json) ---
-#define TFT_CS   53
-#define TFT_DC   9
-#define TFT_RST  8
-// MOSI=51, MISO=50, SCK=52 are handled automatically by Mega Hardware SPI
+// --- ESP32 DevKit V1 TFT pins (from diagram.json) ---
+#define TFT_CS   13
+#define TFT_DC   27
+#define TFT_MOSI 23
+#define TFT_SCK  18
 
-// --- Physical Button Pins (from diagram.json) ---
-#define BTN_EMERGENCY 22
-#define BTN_WATER     23
-#define BTN_WASHROOM  24
-#define BTN_FOOD      25
+// --- ESP32 DevKit V1 physical button pins (from diagram.json) ---
+#define BTN_EMERGENCY 32
+#define BTN_WATER     33
+#define BTN_WASHROOM  25
+#define BTN_FOOD      14
+#define STATUS_LED    4
 
 // --- Initialize TFT ---
-Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RST);
+Adafruit_ILI9341 tft = Adafruit_ILI9341(&SPI, TFT_DC, TFT_CS);
 
 // --- TFT Button Coordinates & Dimensions ---
 #define BTN_X 20
@@ -49,19 +50,29 @@ int getPhysicalButtonAlert();
 
 void setup() {
   Serial.begin(115200);
+  delay(500);
+  Serial.println("BOOT: ESP32 patient alert firmware");
 
   // Initialize Physical Buttons with Internal Pull-Ups
   pinMode(BTN_EMERGENCY, INPUT_PULLUP);
   pinMode(BTN_WATER, INPUT_PULLUP);
   pinMode(BTN_WASHROOM, INPUT_PULLUP);
   pinMode(BTN_FOOD, INPUT_PULLUP);
+  pinMode(STATUS_LED, OUTPUT);
+  digitalWrite(STATUS_LED, LOW);
 
-
-  // Initialize TFT
-  tft.begin();
+  // Use the same explicit VSPI pins that are wired in diagram.json.
+  SPI.begin(TFT_SCK, -1, TFT_MOSI, TFT_CS);
+  Serial.println("BOOT: starting ILI9341");
+  tft.begin(8000000);
+  Serial.println("BOOT: ILI9341 initialized");
   tft.setRotation(0); // Portrait mode (240x320)
+  Serial.println("BOOT: rotation set");
   
   drawMainMenu();
+  Serial.println("BOOT: menu drawn");
+  digitalWrite(STATUS_LED, HIGH);
+  Serial.println("BOOT: status LED on");
   Serial.println("System Ready.");
 }
 
@@ -128,6 +139,8 @@ int getPhysicalButtonAlert() {
 
     if (isPressed && !buttonState[i]) {
       buttonState[i] = true;
+      Serial.print("Button pressed: ");
+      Serial.println(alertNames[i]);
       return i;
     }
 
@@ -140,6 +153,19 @@ int getPhysicalButtonAlert() {
 }
 
 void loop() {
+  static unsigned long lastStatusMs = 0;
+  if (millis() - lastStatusMs >= 2000) {
+    Serial.print("STATUS: buttons emergency/water/washroom/food=");
+    Serial.print(digitalRead(BTN_EMERGENCY));
+    Serial.print(',');
+    Serial.print(digitalRead(BTN_WATER));
+    Serial.print(',');
+    Serial.print(digitalRead(BTN_WASHROOM));
+    Serial.print(',');
+    Serial.println(digitalRead(BTN_FOOD));
+    lastStatusMs = millis();
+  }
+
   // Check physical pushbuttons (single trigger per press).
   int physicalIndex = getPhysicalButtonAlert();
   if (physicalIndex >= 0) {

@@ -1,0 +1,233 @@
+HOSPITAL MANAGEMENT PATIENT ALERT SYSTEM
+PROJECT BUILD AND SETUP PROCEDURE
+
+Project purpose
+---------------
+This project uses an ESP32 DevKit V1, an SPI ILI9341 TFT display, four
+physical request buttons, and a status LED. The ESP32 displays the patient
+request menu and sends button alerts over USB serial. A separate computer
+can run app.py to relay the alerts to Telegram, optionally place Twilio calls,
+and play audio through the computer's speakers.
+
+The TFT is a display only. The colored buttons drawn on its screen are not
+touch controls. The MAX98357A and bedside speaker listed as optional in
+Needed_component.txt are not supported by the current firmware.
+
+
+1. Gather components
+--------------------
+Use Needed_component.txt as the complete shopping list. The essential
+hardware is:
+
+- ESP32 DevKit V1 (ESP32-WROOM-32 or compatible, esp32dev board)
+- SPI ILI9341 TFT display
+- Four momentary push buttons
+- One green LED and one 330 ohm, 1/4 W resistor
+- Breadboard/prototyping board and jumper wires
+- USB data cable matching the ESP32 board connector
+- A computer for PlatformIO and, if using notifications, to run app.py
+- Computer speakers or headphones for app.py audio playback
+
+The TFT breakout's power and logic requirements vary by product. Read its
+datasheet or seller documentation before connecting it. Some modules accept
+5 V power but use 3.3 V logic; others need a different supply or level
+shifting. Do not infer compatibility from the connector or screen size.
+
+
+2. Install development software
+------------------------------
+1. Install Visual Studio Code.
+2. In VS Code, install the PlatformIO IDE extension.
+3. Open the project folder (the folder containing platformio.ini) in VS Code.
+4. Allow PlatformIO to install the ESP32 platform and the libraries declared
+   in platformio.ini. The environment is named esp32dev and uses the Arduino
+   framework.
+5. Install Python 3 and ensure the Windows Python launcher (py) is available
+   in PowerShell. Internet access is needed to install Python packages and
+   for Telegram, Google text-to-speech, and optional Twilio services.
+
+
+3. Wire the hardware
+--------------------
+Disconnect USB power before wiring. Use the GPIO numbers below; board labels
+such as D13 refer to the corresponding ESP32 GPIO where applicable.
+
+ILI9341 TFT to ESP32:
+  TFT VCC   -> a supply supported by the exact TFT breakout
+  TFT GND   -> ESP32 GND
+  TFT CS    -> GPIO 13
+  TFT D/C   -> GPIO 27
+  TFT MOSI  -> GPIO 23
+  TFT SCK   -> GPIO 18
+  TFT RST   -> follow the display module requirements; the current firmware
+               initializes the display without a separate reset GPIO
+  TFT MISO  -> not used by the current firmware
+  TFT LED   -> backlight supply specified by the display manufacturer
+
+Physical push buttons (GPIO to one side of button, other side to ESP32 GND):
+  Emergency -> GPIO 32
+  Water     -> GPIO 33
+  Washroom  -> GPIO 25
+  Food      -> GPIO 14
+
+The firmware sets these inputs to INPUT_PULLUP. A button reads HIGH when
+released and LOW when pressed. No external button pull-up resistors are
+needed. Check the terminals of each physical button: use a pair that closes
+the circuit only while pressed.
+
+Status LED:
+  ESP32 GPIO 4 -> 330 ohm resistor -> LED anode (long leg)
+  LED cathode (short leg/flat side) -> ESP32 GND
+
+The resistor must be in series with the LED and may be on either side of it.
+Connect all grounds together. Never connect 5 V to an ESP32 GPIO; its GPIOs
+are 3.3 V logic and are not 5 V tolerant. Do not connect a speaker directly
+to a GPIO.
+
+The connections in diagram.json are for the Wokwi simulation. The physical
+TFT supply must follow the exact breakout's specifications even if a
+simulator connection is shown.
+
+
+4. Build and upload the ESP32 firmware
+--------------------------------------
+1. Connect the ESP32 to the computer using a USB data cable.
+2. In VS Code, open src/main.cpp and confirm the wiring matches the pin
+   definitions near the top of the file.
+3. Build in PlatformIO by selecting the esp32dev environment and choosing
+   Build from the PlatformIO toolbar, or run this in the PlatformIO terminal:
+
+       pio run
+
+   A successful build produces firmware under .pio/build/esp32dev/.
+   PlatformIO downloads the required board platform and libraries on the
+   first build.
+4. Upload using the PlatformIO Upload action, or run:
+
+       pio run -t upload
+
+   If PlatformIO does not select the correct serial port automatically, find
+   the ESP32 COM port in Windows Device Manager and specify it:
+
+       pio run -t upload --upload-port COM3
+
+   Replace COM3 with the port shown on your computer.
+5. Open the PlatformIO Serial Monitor at 115200 baud. You should see boot
+   messages followed by "System Ready." The TFT should show PATIENT TRIAGE
+   and the four request labels; the green status LED should turn on.
+6. Press each physical button once and check that its matching alert appears
+   on the serial monitor as ALERT:EMERGENCY, ALERT:WATER, ALERT:WASHROOM, or
+   ALERT:FOOD. The display briefly shows SENT! then returns to the menu.
+
+Close the PlatformIO Serial Monitor before running app.py against the same
+physical COM port. Only one application can normally open that serial port
+at a time.
+
+
+5. Configure and run the computer-side alert service
+----------------------------------------------------
+This step is optional if only the ESP32 display and local serial alerts are
+needed. For Telegram notifications, create a Telegram bot using the official
+BotFather account, start a conversation with that bot from each recipient
+account, and obtain the bot token and each recipient's chat ID. Never put
+these values in a public file or share them in screenshots.
+
+Create a private Python virtual environment and install the project packages
+from PowerShell in the project folder:
+
+    py -m venv .venv
+    .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+Set the Telegram settings in the same PowerShell window that will run app.py:
+
+    $env:TELEGRAM_BOT_TOKEN = "your-new-bot-token"
+    $env:TELEGRAM_CAREGIVER_CHAT_ID = "caregiver-chat-id"
+    $env:TELEGRAM_DOCTOR_CHAT_ID = "doctor-chat-id"
+
+The Telegram token and both chat IDs are required by the current service.
+Use the actual caregiver and doctor chat IDs, not their phone numbers.
+
+To receive alerts from a physical ESP32, set WOKWI_PORT to its COM port:
+
+    $env:WOKWI_PORT = "COM3"
+
+Close any serial monitor using that port, then start the service:
+
+    & .\.venv\Scripts\python.exe app.py
+
+To use Wokwi, open the project in the Wokwi simulator and start the
+simulation. Wokwi.toml configures the RFC2217 serial server on port 4000; the
+service's default WOKWI_PORT is rfc2217://127.0.0.1:4000. The default is
+therefore for the simulator. Set WOKWI_PORT to the ESP32 COM port when using
+physical hardware.
+
+Optional Twilio voice calls require all of the following environment
+variables to be set in the same PowerShell window:
+
+    $env:TWILIO_ACCOUNT_SID = "your-account-sid"
+    $env:TWILIO_AUTH_TOKEN = "your-auth-token"
+    $env:TWILIO_FROM_NUMBER = "+countrycode-number"
+    $env:CAREGIVER_PHONE_NUMBER = "+countrycode-number"
+    $env:DOCTOR_PHONE_NUMBER = "+countrycode-number"
+
+If Twilio is not configured, Telegram alerts and computer audio can still
+run; phone calls are skipped. Check applicable Twilio account, trial, and
+recipient verification requirements before enabling calls.
+
+
+6. End-to-end test
+------------------
+1. Confirm that the ESP32 has booted and the Python service says it connected
+   to the chosen serial endpoint.
+2. Press a physical button. Confirm that app.py prints a Processing Event
+   message and that the configured Telegram recipient receives the
+   corresponding notification.
+3. Check computer speakers/headphones for the generated audio. The audio is
+   played on the computer running app.py, not on the ESP32.
+4. Send a text reply to the Telegram bot from an intended responder account
+   and check that the service announces that reply through the computer's
+   audio output.
+5. Test emergency, water, food, and washroom requests individually. Emergency
+   alerts are sent to both configured Telegram recipients; other request
+   types are sent to the caregiver.
+
+The service sends repeated Telegram alert waves and waits for a Telegram
+reply before it processes another request. This is a demonstration project,
+not a certified medical or emergency-response device; do not rely on it as
+the sole means of requesting urgent help.
+
+
+7. Troubleshooting
+------------------
+- Build fails or libraries are missing: check internet access, open the
+  folder containing platformio.ini, select the esp32dev environment, and
+  retry the PlatformIO build.
+- Upload fails: use a USB data cable, check the selected COM port, close
+  other serial applications, and confirm the board's USB/boot procedure.
+- Serial output contains no boot lines: confirm the monitor uses 115200 baud
+  and that upload completed successfully.
+- Screen is blank or shows incorrect colors: disconnect power and recheck
+  TFT power, ground, CS, D/C, MOSI, and SCK. Confirm the exact module's
+  voltage and reset/backlight requirements.
+- A button does not register: verify that the button connects its GPIO pin
+  to GND only while pressed and that the correct GPIO is used.
+- LED does not light: check LED polarity, the series resistor, GPIO 4, and
+  common ground.
+- app.py reports missing Telegram settings: set the three required
+  TELEGRAM_* environment variables in the same PowerShell session that runs
+  the service. Restart the service after changing them.
+- app.py cannot connect: set WOKWI_PORT to the correct COM port for physical
+  hardware, close the serial monitor, or start Wokwi for the RFC2217 default.
+- Telegram/audio features fail: confirm internet access, bot token and chat
+  IDs, that recipients have started the bot, and that the computer has a
+  working audio output. Google text-to-speech requires internet access.
+
+
+Credential safety notice
+------------------------
+The project previously contained Telegram and Twilio credentials and phone
+numbers directly in app.py. Treat any such values that were present in a
+copy of the project as exposed: revoke/rotate the Telegram bot token and
+Twilio credentials before use. The current app.py reads the environment
+variables documented above instead. Do not commit credentials, chat IDs,
+or phone numbers to source control.

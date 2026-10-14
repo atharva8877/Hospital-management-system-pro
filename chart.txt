@@ -1,0 +1,649 @@
+HOSPITAL MANAGEMENT PATIENT ALERT SYSTEM
+PROJECT DIAGRAMS (PLAIN-TEXT CHARTS)
+
+Scope
+-----
+The ESP32 reads four physical buttons, updates an ILI9341 display, and sends
+alert lines over serial. The optional PC service (app.py) reads serial data,
+sends Telegram messages/audio, optionally starts Twilio calls, and plays
+audio on the PC. The TFT menu is display-only; its drawn buttons are not
+touch controls. The optional MAX98357A bedside speaker is not implemented.
+
+Legend
+------
+[Process / component]     (External actor or system)
+---->                     Direction of control or data
+....>                     Optional path
+
+
+1. RESEARCH WORKFLOW FLOWCHART
+------------------------------
+
+  +-------------------------------+
+  | START: identify the problem   |
+  | Patient needs a simple way to |
+  | request routine/urgent help  |
+  +---------------+---------------+
+                  |
+                  v
+  +-------------------------------+
+  | Gather requirements           |
+  | - Four request types          |
+  | - Visual feedback at bedside  |
+  | - Notify remote responders    |
+  | - Keep emergency call path    |
+  |   optional/configurable       |
+  +---------------+---------------+
+                  |
+                  v
+  +-------------------------------+
+  | Research candidate components |
+  | ESP32, ILI9341 SPI TFT,       |
+  | momentary buttons, LED,       |
+  | resistor, power and cables    |
+  +---------------+---------------+
+                  |
+                  v
+  <Does each component meet the   >
+  <electrical and functional      >
+  <requirements in its datasheet?>
+        | Yes                 | No
+        v                     +----> Select compatible part;
+  +-------------------------------+      repeat research
+  | Assign GPIO and bus pins;     |
+  | define button-to-alert labels|
+  +---------------+---------------+
+                  |
+                  v
+  +-------------------------------+
+  | Design system boundary        |
+  | ESP32 = inputs/display/serial |
+  | PC = Telegram/Twilio/audio    |
+  +---------------+---------------+
+                  |
+                  v
+  +-------------------------------+
+  | Prototype circuit in Wokwi    |
+  | (diagram.json) and configure  |
+  | PlatformIO (platformio.ini)   |
+  +---------------+---------------+
+                  |
+                  v
+  +-------------------------------+
+  | Build firmware; inspect       |
+  | display, serial and GPIO      |
+  +---------------+---------------+
+                  |
+                  v
+  <Do all four buttons produce    >
+  <the matching ALERT line?       >
+        | Yes                 | No
+        v                     +----> Check pins, pull-ups,
+  +-------------------------------+      wiring and code; retest
+  | Connect Python serial bridge  |
+  | Configure Telegram; test     |
+  | optional Twilio separately   |
+  +---------------+---------------+
+                  |
+                  v
+  <Does end-to-end alert, reply,  >
+  <and audio behavior work?       >
+        | Yes                 | No
+        v                     +----> Check port, credentials,
+  +-------------------------------+      network/audio; retest
+  | Document build steps,         |
+  | limitations, and safe use     |
+  +---------------+---------------+
+                  |
+                  v
+               (END)
+
+
+2. SYSTEM ARCHITECTURE BLOCK DIAGRAM
+------------------------------------
+
+  USER / PHYSICAL LAYER                 DEVICE / FIRMWARE LAYER
+  ---------------------                 -----------------------
+  (Patient)
+      |
+      | closes one button switch to GND
+      v
+  +--------------------------+
+  | Four momentary switches  |
+  | GPIO32 Emergency         |
+  | GPIO33 Water             |
+  | GPIO25 Washroom          |
+  | GPIO14 Food              |
+  +------------+-------------+
+               |
+               | Digital inputs; INPUT_PULLUP
+               v
+  +-----------------------------------------+
+  | ESP32 DevKit V1 / src/main.cpp          |
+  | 1. Serial.begin(115200)                 |
+  | 2. Configure button and LED pins        |
+  | 3. Start SPI on SCK=18, MOSI=23         |
+  | 4. Initialize ILI9341, CS=13, DC=27     |
+  | 5. Detect button press and map label    |
+  | 6. Send ALERT:<TYPE> over serial        |
+  +-----------+-------------------+---------+
+              |                   |
+              | SPI               | USB serial, 115200 baud
+              v                   v
+  +----------------------+    +-----------------------------+
+  | ILI9341 TFT          |    | Physical path: ESP32 COM port|
+  | Menu and "SENT!"     |    | Simulated: Wokwi RFC2217    |
+  | display only         |    | 127.0.0.1:4000              |
+  +----------------------+    +--------------+--------------+
+                                             |
+                                             v
+  PC / INTEGRATION LAYER                +-------------------------+
+  ----------------------                | app.py / Python service |
+                                        | pyserial reads line      |
+                                        | filters for "ALERT:"     |
+                                        | route text by alert type |
+                                        | waiting_for_reply state  |
+                                        +---+----------+----------+
+                                            |          |
+                      Internet HTTPS -------+          +.... HTTPS ----+
+                                            |                         |
+                                            v                         v
+                                 +-------------------+      +----------------+
+                                 | Telegram Bot API  |      | Twilio REST API|
+                                 | text and MP3      |      | optional calls |
+                                 +---------+---------+      +-------+--------+
+                                           |                        |
+                                           v                        v
+                                  (Caregiver / Doctor)      (Phone recipients)
+                                           |
+                                           | text reply
+                                           v
+                                  +-------------------+
+                                  | app.py receives   |
+                                  | reply via polling |
+                                  | gTTS -> MP3       |
+                                  | pygame playback   |
+                                  +---------+---------+
+                                            |
+                                            v
+                                  (PC speakers/headphones)
+
+  Additional local alert audio: gTTS + pygame on the PC.
+  There is no implemented ESP32-to-bedside-speaker output in this design.
+  GPIO4 -> 330 ohm resistor -> LED anode; LED cathode -> ESP32 GND.
+
+
+3. DATA FLOW DIAGRAM (DFD)
+--------------------------
+
+  CONTEXT / LEVEL 0
+
+   (Patient)
+       | request via Emergency / Water / Food / Washroom button
+       v
+   +-----------------------------------+
+   | Patient Alert System              |
+   | ESP32 + TFT + PC Python bridge    |
+   +------+-----------------+----------+
+          |                 |
+          | alert text/audio| optional call request
+          v                 v
+   (Telegram recipients)  (Phone recipients via Twilio)
+          |
+          | text response to bot
+          v
+   (Caregiver / Doctor)
+
+   System ---- spoken local alert/reply audio ----> (PC audio output)
+
+  LEVEL 1 DETAIL
+
+  EXTERNAL ENTITY            PROCESS / DATA STORE              EXTERNAL ENTITY
+
+  (Patient)
+      |
+      | D1: switch closure to GND; selected GPIO goes LOW
+      v
+  +----------------------------------+      SPI data/control
+  | P1: Scan button inputs           |--------------------------+
+  | ESP32 INPUT_PULLUP               |                          v
+  | Detect released-to-pressed edge  |                  +---------------+
+  | Map GPIO to alert name           |                  | D1: ILI9341   |
+  +----------------+-----------------+                  | visual output|
+                   |                                    +---------------+
+                   | D2: "ALERT:<TYPE>" line (Serial.println)
+                   | USB serial or Wokwi RFC2217
+                   v
+  +----------------------------------+        +-----------------------+
+  | P2: Read serial event in app.py  |<------>| D2: Python service   |
+  | pyserial, 115200 baud            |        | state: last update ID|
+  | Ignore non-ALERT lines           |        | waiting_for_reply    |
+  +----------------+-----------------+        +-----------------------+
+                   |
+                   | D3: normalized alert event
+                   v
+  +----------------------------------+
+  | P3: Choose alert content and     |
+  | recipient list                  |
+  | EMERGENCY -> caregiver + doctor |
+  | Other requests -> caregiver     |
+  +----------+---------------+-------+
+             |               |
+             | D4: text and  | D5: voice message, phone number
+             | voice text   |
+             v               v
+  +--------------------+   +----------------------+
+  | P4: Send five      |   | P5: Optional Twilio |
+  | Telegram alert    |   | outbound call        |
+  | waves: text + MP3 |   +----------+-----------+
+  +---------+----------+              |
+            |                         | D6: call request
+            v                         v
+  (Caregiver / Doctor)          (Phone recipients)
+            |
+            | D7: responder text sent to Telegram bot
+            v
+  +----------------------------------+
+  | P6: Poll for Telegram replies    |
+  | Set waiting_for_reply false      |
+  | Create speech and play 3 times  |
+  +----------------+-----------------+
+                   |
+                   | D8: audio samples
+                   v
+             (PC speakers)
+
+  D9: gTTS-generated initial alert speech is played once on the PC.
+  No database is used; alert/reply state is held in process memory.
+  Alert sequence: local audio -> 5 Telegram waves (2-second spacing) ->
+  optional Twilio call -> wait for Telegram reply.
+
+
+4. PROCESS FLOW DIAGRAM WITH TOOL MAPPING
+-----------------------------------------
+
+  DEVELOPMENT / BUILD                           RUN / DEPLOYMENT
+  -------------------                           ----------------
+
+  [Edit src/main.cpp]
+       Tool: VS Code
+       Review GPIO map, SPI pins and alert labels
+          |
+          v
+  [Resolve firmware dependencies]
+       Tool: PlatformIO
+       platformio.ini: esp32dev + Arduino
+       Adafruit GFX + Adafruit ILI9341
+          |
+          v
+  [Compile firmware]
+       Tool: `pio run` or PlatformIO Build
+       Output: .pio/build/esp32dev/firmware.bin
+          |
+          +-------------------------------+
+          |                               |
+          v                               v
+  [Wokwi simulation]                [Physical board]
+  diagram.json                      ESP32 USB data cable
+  Wokwi extension                   Select COM port
+          |                               |
+          +---------------+---------------+
+                          |
+                          v
+  [Verify TFT menu, LED and four physical/simulated inputs]
+       Tool: Wokwi controls or PlatformIO Serial Monitor, 115200 baud
+       Expected serial: ALERT:EMERGENCY / WATER / FOOD / WASHROOM
+                          |
+                          v
+  [Prepare Python environment]
+       Tool: Windows PowerShell + Python launcher
+       `py -m venv .venv`
+       `.\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt`
+                          |
+                          v
+  [Set configuration in process environment]
+       Telegram token + caregiver/doctor chat IDs: required service settings
+       WOKWI_PORT: default RFC2217 for simulator; COMx for board
+       Twilio settings and phone numbers: optional
+                          |
+                          v
+  [Start app.py]
+       Tool: Python + pyserial / requests / gTTS / pygame
+       Close PlatformIO serial monitor first for a physical COM port
+                          |
+             +------------+-------------+
+             |            |             |
+             v            v             v
+      Telegram Bot API  Twilio API   PC audio output
+      text + MP3        optional     alert/reply speech
+             |
+             v
+      Responder reply -> app.py polling -> gTTS -> pygame -> PC audio
+
+  Wokwi uses the RFC2217 endpoint configured in wokwi.toml (port 4000).
+  Python dependencies are declared in requirements.txt. Configure service
+  credentials privately; never publish or commit tokens and phone numbers.
+
+
+5. PERT CHART / CPM DIAGRAM
+---------------------------
+Planning estimates only; actual effort depends on parts, experience, and
+network/account setup. Durations are working days.
+
+  Activity   Work package                              Duration  Predecessors
+  --------   ----------------------------------------  --------  ------------
+  A          Requirements and parts verification       1 day     -
+  B          Pin map, circuit and architecture design  1 day     A
+  C          Assemble circuit or finish Wokwi model    1 day     B
+  D          ESP32 firmware build and UI/input test    2 days    C
+  E          Python environment + Telegram setup       2 days    A
+  F          Serial integration + end-to-end testing   2 days    D, E
+  G          Fixes, documentation and demonstration    1 day     F
+
+  DEPENDENCY NETWORK (arrows mean "must finish before")
+
+                           +--> [B: Pin/design, 1d] --> [C: Circuit, 1d]
+                           |                                      |
+  [A: Requirements, 1d] ---+                                      v
+                           |                           [D: Firmware, 2d] --+
+                           |                                             |
+                           +--> [E: Python/Telegram, 2d] ----------------+
+                                                                         v
+                                                           [F: Integration, 2d]
+                                                                         |
+                                                                         v
+                                                           [G: Finalize, 1d]
+
+  Critical path: A -> B -> C -> D -> F -> G = 8 working days.
+  Parallel path: A -> E -> F -> G = 6 working days.
+  Estimated duration with the planned overlap: 8 working days.
+  Estimates are illustrative; dependencies and duration can change with
+  component delivery, account setup, and testing results.
+
+
+6. GANTT CHART (METHODOLOGY TIMELINE)
+-------------------------------------
+Illustrative 8-working-day plan; E can proceed while circuit/firmware work
+continues. Each # is one planned workday.
+
+  Task / work package                       01 02 03 04 05 06 07 08
+  A. Requirements and parts check            ## .. .. .. .. .. .. ..
+  B. Pin map and architecture design         .. ## .. .. .. .. .. ..
+  C. Circuit assembly / Wokwi model          .. .. ## .. .. .. .. ..
+  D. Firmware build + display/button tests   .. .. .. ## ## .. .. ..
+  E. Python environment + Telegram setup     .. ## ## .. .. .. .. ..
+  F. Serial integration + end-to-end test    .. .. .. .. .. ## ## ..
+  G. Fixes, documentation + demo             .. .. .. .. .. .. .. ##
+
+  Dependency check:
+    A -> B -> C -> D ----+
+                         +-> F -> G
+    A -> E ---------------+
+
+  Legend: ## = scheduled work; .. = no planned work.
+  This is a proposed methodology timeline, not actual project history.
+
+
+7. ACTIVITY DIAGRAM (UML)
+-------------------------
+
+  PARTITION / SWIMLANE: ESP32 FIRMWARE                  PC SERVICE
+  -----------------------------------                  -----------
+  (Initial)
+      |
+      v
+  [Serial.begin(115200)]
+      |
+      v
+  [Set four button GPIOs INPUT_PULLUP]
+      |
+      v
+  [Set GPIO4 output LOW]
+      |
+      v
+  [Start SPI: SCK18, MOSI23, CS13, DC27]
+      |
+      v
+  [Initialize ILI9341; draw menu]
+      |
+      v
+  [Turn status LED HIGH; print System Ready]
+      |
+      v
+  +-------------------------------+         +-------------------------+
+  | Loop: every 2 s print STATUS  |         | app.py validates env    |
+  | then scan buttons             |         | and opens serial port   |
+  +---------------+---------------+         +------------+------------+
+                  |                                      |
+                  v                                      v
+         <New LOW input edge?>                [Poll Telegram replies]
+           | No              | Yes                      |
+           |                 v                          |
+           |        [Map index to alert]                 |
+           |                 |                          |
+           |        [Check 500 ms gate]                  |
+           |                 |                          |
+           |        [Serial: ALERT:<TYPE>] ------------>|
+           |        [TFT shows SENT! 2 sec]              |
+           |        [Redraw menu; delay 150 ms]          |
+           |                 |                          v
+           |                 |              <Line contains ALERT: and
+           |                 |               waiting_for_reply is false?>
+           |                 |                   | No          | Yes
+           |                 |                   |             v
+           |                 |                   |    [Create alert text]
+           |                 |                   |    [Play PC audio]
+           |                 |                   |    [Send five Telegram
+           |                 |                   |     text/audio waves]
+           |                 |                   |    [Optional Twilio call]
+           |                 |                   |    [Wait for response]
+           |                 |                   |             |
+           |                 |                   |   [Reply received via
+           |                 |                   |    Telegram polling?]
+           |                 |                   |      | No       | Yes
+           |                 |                   |      |          v
+           |                 |                   |      |   [Speak reply
+           |                 |                   |      |    three times]
+           |                 |                   |      |   [Unlock alert
+           |                 |                   |      |    processing]
+           +-----------------+-------------------+------+----------+
+                             Return to repeating firmware/service loops
+
+  Note: the 500 ms cooldown is global, not per button. Button processing
+  blocks the firmware loop for about 2 seconds while SENT! is displayed.
+  The Python service is a separate process; its waiting_for_reply state does
+  not disable the ESP32 buttons.
+
+
+8. SWIMLANE DIAGRAM (ROLE / TASK DISTRIBUTION)
+----------------------------------------------
+
+  PATIENT       ESP32 + TFT       PC SERVICE (app.py)    TELEGRAM / TWILIO    RECIPIENTS
+  -------       -----------       -------------------    -----------------    ----------
+  Select request
+  and press button
+      |               |
+      +-------------->| Read GPIO (INPUT_PULLUP)
+                      | Detect new press edge
+                      | Map button to type
+                      | Apply global 500 ms cooldown
+                      | Draw SENT! for 2 seconds
+                      | Send ALERT:<TYPE> over serial
+                      +---------------------------> Read 115200-baud serial
+                                                    Ignore non-alert lines
+                                                    Select message/recipients
+                                                    Set waiting_for_reply
+                                                          |
+                                                          +---------------> Play initial
+                                                          |                  voice on PC
+                                                          |
+                                                    Send alert wave 1 -----> Telegram text
+                                                    Send audio wave 1 ----> Telegram audio
+                                                    Wait 2 seconds
+                                                    Send waves 2-5 -------> Telegram
+                                                    (five total waves)
+                                                          |
+                                                    Optional outbound call -> Twilio -> Phone
+                                                                                 |
+  See/hear alert <---------------------------------------------------------------+
+  Assess request
+  and reply by text
+      |                                                               |
+      +--------------------------------------------------------------> Telegram bot
+                                                                      |
+                                                    Poll for reply <---+
+                                                    Convert reply with gTTS
+                                                    Play reply three times -> PC speakers
+                                                    Clear waiting state
+  Receive assistance <----------------------------------------------------------+
+
+  Routing: EMERGENCY -> caregiver and doctor. WATER, FOOD, WASHROOM -> caregiver.
+  Twilio calls require environment credentials and configured destination
+  numbers. The local voice output is the computer running app.py, not an
+  ESP32-connected bedside speaker.
+
+
+9. SIGNAL PROCESSING PIPELINE DIAGRAM
+-------------------------------------
+
+  INPUT STAGE          FIRMWARE EVENT STAGE       TRANSPORT / PC STAGE
+  -----------          --------------------       --------------------
+
+  Button open          digitalRead(GPIO)
+  switch               INPUT_PULLUP enabled
+      |                       |
+      |              released reads HIGH
+      |              pressed-to-GND LOW
+      |                       |
+      +---------------------->v
+                       +---------------------+
+                       | Compare current     |
+                       | pressed state with  |
+                       | saved buttonState[] |
+                       +----------+----------+
+                                  |
+                       Is LOW and was released?
+                         | No             | Yes
+                         |                v
+                         |     Save state as pressed
+                         |     Print "Button pressed: <TYPE>"
+                         |     Return its array index
+                         |                |
+                         |                v
+                         |     Map buttonPins[] index to alertNames[]
+                         |                |
+                         |                v
+                         |     Check millis() - lastAlertMs >= 500
+                         |       | No             | Yes
+                         |       v                v
+                         |     Suppress       Update lastAlertMs
+                         |     transmission   Serial.print("ALERT:")
+                         |                    Serial.println(TYPE)
+                         |                         |
+                         |                         v
+                         |                TFT "SENT!" -> 2 sec delay
+                         |                redraw menu -> 150 ms delay
+                         |                         |
+                         |                         v
+                         |              +------------------------+
+                         +------------->| USB serial 115200 OR   |
+                                        | Wokwi RFC2217 socket   |
+                                        +-----------+------------+
+                                                    |
+                                                    v
+                                        app.py reads serial line
+                                        decode UTF-8, strip whitespace
+                                        require "ALERT:" substring
+                                                    |
+                                                    v
+                                        Parse alert kind and route:
+                                        EMERGENCY -> two Telegram IDs
+                                        other types -> caregiver ID
+                                                    |
+                              +---------------------+------------------+
+                              |                     |                  |
+                              v                     v                  v
+                     Telegram text/audio    optional Twilio     PC TTS playback
+                     five waves; 2 sec      outbound call       initial alert
+                     between waves
+
+  Released-to-pressed state detection ensures a held button does not keep
+  emitting events. The 500 ms gate is a shared cooldown. The 150 ms delay is
+  an additional pause after a handled input; this code does not use a
+  dedicated timer-based or hardware debounce filter.
+
+  This is digital input/event handling, not analog sensor filtering. The
+  current firmware does not implement a separate sampled debounce/filter
+  algorithm.
+
+
+10. ALGORITHM FLOWCHART (BUTTON-TO-ALERT IMPLEMENTATION)
+--------------------------------------------------------
+
+  (START)
+     |
+     v
+  [Initialize buttonPins[] and alertNames[] arrays]
+     |
+     v
+  [For i = 0,1,2,3 in array order]
+     |    i=0 GPIO32 EMERGENCY
+     |    i=1 GPIO33 WATER
+     |    i=2 GPIO14 FOOD
+     |    i=3 GPIO25 WASHROOM
+     v
+  [Read pin: isPressed = (digitalRead(pin) == LOW)]
+     |
+     v
+  <Is isPressed true?>
+     | No                              | Yes
+     v                                 v
+  [Set buttonState[i]=false]   <Was buttonState[i] false?>
+     |                            | No             | Yes
+     |                            v                v
+     |                     [Button held;       [Set buttonState[i]=true]
+     |                      no new event]      [Print button label]
+     |                            |                |
+     |                            |                v
+     |                            |       [Return alert index i]
+     |                            |                |
+     |                            |                v
+     |                            |       [Call triggerAlert(name)]
+     |                            |                |
+     |                            |                v
+     |                            |       [now = millis()]
+     |                            |                |
+     |                            |                v
+     |                            |       <now-lastAlertMs < 500?>
+     |                            |          | Yes           | No
+     |                            |          v               v
+     |                            |      [Return;      [Update lastAlertMs]
+     |                            |       no ALERT]          |
+     |                            |                          v
+     |                            |                  [Print ALERT:<TYPE>]
+     |                            |                          |
+     |                            |                  [TFT clear + SENT!]
+     |                            |                          |
+     |                            |                  [Delay 2000 ms]
+     |                            |                          |
+     |                            |                  [Redraw menu]
+     |                            |                          |
+     +----------------------------+--------------------------+
+                                  |
+                                  v
+                       [Delay 150 ms after detected input]
+                                  |
+                                  v
+                       [Return to loop; print STATUS
+                        every 2000 ms when due]
+                                  |
+                                  +----> scan again
+
+  IMPORTANT BEHAVIOR:
+  - The button scan order is the array order above, not the visual menu order.
+  - buttonState[i] resets only after that pin is read released (HIGH).
+  - lastAlertMs is shared by all four buttons; rapid successive requests can
+    be suppressed during the cooldown.
+  - As coded, lastAlertMs starts at zero, so a button press during the first
+    500 ms after boot is also inside the cooldown window.
+  - triggerAlert delays for 2 seconds before the loop can scan buttons again.

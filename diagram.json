@@ -3,31 +3,37 @@
   "author": "Anonymous",
   "editor": "wokwi",
   "parts": [
-    { "type": "wokwi-arduino-mega", "id": "mega", "top": 120, "left": 60, "attrs": {} },
+    { "type": "wokwi-esp32-devkit-v1", "id": "esp32", "top": 120, "left": 60, "attrs": {} },
     { "type": "wokwi-ili9341", "id": "tft", "top": -140, "left": 180, "attrs": {} },
     { "type": "wokwi-pushbutton", "id": "emergencyButton", "top": 300, "left": 180, "attrs": { "color": "red", "label": "EMERGENCY" } },
     { "type": "wokwi-pushbutton", "id": "waterButton", "top": 300, "left": 300, "attrs": { "color": "blue", "label": "WATER" } },
     { "type": "wokwi-pushbutton", "id": "washroomButton", "top": 380, "left": 180, "attrs": { "color": "green", "label": "WASHROOM" } },
-    { "type": "wokwi-pushbutton", "id": "foodButton", "top": 380, "left": 300, "attrs": { "color": "orange", "label": "FOOD" } }
+    { "type": "wokwi-pushbutton", "id": "foodButton", "top": 380, "left": 300, "attrs": { "color": "orange", "label": "FOOD" } },
+    { "type": "wokwi-resistor", "id": "statusLedResistor", "top": 470, "left": 180, "attrs": { "value": "330" } },
+    { "type": "wokwi-led", "id": "statusLed", "top": 470, "left": 280, "attrs": { "color": "green", "label": "SYSTEM ON" } }
   ],
   "connections": [
-    [ "mega:5V", "tft:VCC", "red", [ "v0" ] ],
-    [ "mega:GND.1", "tft:GND", "black", [ "v0" ] ],
-    [ "mega:53", "tft:CS", "green", [ "v0" ] ],
-    [ "mega:9", "tft:D/C", "green", [ "v0" ] ],
-    [ "mega:8", "tft:RST", "green", [ "v0" ] ],
-    [ "mega:51", "tft:MOSI", "blue", [ "v0" ] ],
-    [ "mega:50", "tft:MISO", "blue", [ "v0" ] ],
-    [ "mega:52", "tft:SCK", "blue", [ "v0" ] ],
-    [ "mega:20", "tft:SDA", "purple", [ "v0" ] ],
-    [ "mega:21", "tft:SCL", "purple", [ "v0" ] ],
-    [ "mega:22", "emergencyButton:1.l", "green", [ "v0" ] ],
-    [ "mega:23", "waterButton:1.l", "blue", [ "v0" ] ],
-    [ "mega:24", "washroomButton:1.l", "green", [ "v0" ] ],
-    [ "mega:25", "foodButton:1.l", "orange", [ "v0" ] ],
-    [ "mega:GND.2", "emergencyButton:2.r", "black", [ "v0" ] ],
-    [ "mega:GND.2", "waterButton:2.r", "black", [ "v0" ] ],
-    [ "mega:GND.2", "washroomButton:2.r", "black", [ "v0" ] ],
-    [ "mega:GND.2", "foodButton:2.r", "black", [ "v0" ] ]
-  ]
+    [ "esp32:VIN", "tft:VCC", "red", [ "v0" ] ],
+    [ "esp32:GND.1", "tft:GND", "black", [ "v0" ] ],
+    [ "esp32:D13", "tft:CS", "green", [ "v0" ] ],
+    [ "esp32:D27", "tft:D/C", "green", [ "v0" ] ],
+    [ "esp32:D23", "tft:MOSI", "blue", [ "v0" ] ],
+    [ "esp32:D18", "tft:SCK", "blue", [ "v0" ] ],
+    [ "esp32:D32", "emergencyButton:1.l", "green", [ "v0" ] ],
+    [ "esp32:D33", "waterButton:1.l", "blue", [ "v0" ] ],
+    [ "esp32:D25", "washroomButton:1.l", "green", [ "v0" ] ],
+    [ "esp32:D14", "foodButton:1.l", "orange", [ "v0" ] ],
+    [ "esp32:GND.1", "emergencyButton:2.r", "black", [ "v0" ] ],
+    [ "esp32:GND.1", "waterButton:2.r", "black", [ "v0" ] ],
+    [ "esp32:GND.1", "washroomButton:2.r", "black", [ "v0" ] ],
+    [ "esp32:GND.1", "foodButton:2.r", "black", [ "v0" ] ],
+    [ "esp32:D4", "statusLedResistor:1", "green", [ "v0" ] ],
+    [ "statusLedResistor:2", "statusLed:A", "green", [ "v0" ] ],
+    [ "statusLed:C", "esp32:GND.1", "black", [ "v0" ] ],
+    [ "esp32:TX0", "$serialMonitor:RX", "", [] ],
+    [ "esp32:RX0", "$serialMonitor:TX", "", [] ]
+  ],
+  "serialMonitor": {
+    "display": "always"
+  }
 }

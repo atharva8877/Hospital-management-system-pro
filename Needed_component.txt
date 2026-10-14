@@ -1,0 +1,104 @@
+Components needed for the Hospital Management Patient Alert System
+
+Required hardware
+-----------------
+Amazon India links below open product-search results; check the exact board
+connector, display voltage/logic requirements, and product specifications
+before ordering.
+
+1. ESP32 DevKit V1 development board (ESP32-WROOM-32 or compatible):
+   https://www.amazon.in/s?k=ESP32+DevKit+V1+ESP32-WROOM-32
+2. 2.8-inch ILI9341 TFT display module with SPI interface:
+   https://www.amazon.in/s?k=2.8+inch+ILI9341+SPI+TFT+display
+3. One green 5 mm LED for the system-started indicator:
+   https://www.amazon.in/s?k=5mm+green+LED
+4. One 330 ohm resistor (1/4 W is suitable) in series with the status LED:
+   https://www.amazon.in/s?k=330+ohm+resistor+1%2F4W
+5. Four momentary push buttons:
+   - Emergency
+   - Water
+   - Washroom
+   - Food
+   https://www.amazon.in/s?k=12mm+momentary+push+button+4+pack
+6. Breadboard or a suitable prototyping board:
+   https://www.amazon.in/s?k=830+point+solderless+breadboard
+7. Jumper wires (male-to-male; add other types if required by your board/display):
+   https://www.amazon.in/s?k=male+to+male+breadboard+jumper+wires
+8. USB data cable compatible with the ESP32 board, for programming and power.
+   Choose Micro-USB or USB-C to match the exact board:
+   https://www.amazon.in/s?k=USB+data+cable+Micro+USB+USB+C
+9. Computer with PlatformIO/VS Code to build and upload the firmware.
+   https://www.amazon.in/s?k=laptop+computer
+10. Powered computer speakers or headphones for the current PC-based audio:
+    https://www.amazon.in/s?k=powered+USB+computer+speakers
+
+For the PC-side alert service
+----------------------------
+1. A computer to run app.py.
+   https://www.amazon.in/s?k=laptop+computer
+2. Internet access for Telegram and optional Twilio calls.
+3. Telegram bot and recipient configuration. Twilio credentials and phone
+   numbers are needed only if outbound phone calls are enabled.
+4. A working computer audio output (built-in speakers, powered speakers, or
+   headphones). app.py uses pygame to play generated audio on the computer.
+   https://www.amazon.in/s?k=powered+USB+computer+speakers
+
+Optional bedside speaker (not implemented in the current firmware)
+------------------------------------------------------------------
+If audio must come directly from the ESP32 rather than the computer, add:
+1. MAX98357A I2S amplifier module:
+   https://www.amazon.in/s?k=MAX98357A+I2S+amplifier+module
+2. 4-8 ohm speaker compatible with the amplifier module:
+   https://www.amazon.in/s?k=4+ohm+8+ohm+speaker+MAX98357A
+3. Jumper wires:
+   https://www.amazon.in/s?k=male+to+male+breadboard+jumper+wires
+
+This requires additional ESP32 firmware and audio playback changes; the
+existing app.py does not send audio to an ESP32-connected speaker. Do not
+connect a low-impedance speaker directly to an ESP32 GPIO.
+
+Resistors
+---------
+The status LED requires the listed 330 ohm current-limiting resistor in series.
+Connect GPIO 4 -> resistor -> LED anode (long leg); connect the LED cathode
+(short leg/flat side) to ESP32 GND. The resistor can be placed on either side
+of the LED as long as it is in series.
+
+No external resistors are required for the four buttons in this design:
+firmware configures their GPIO pins as INPUT_PULLUP, so each button connects
+its GPIO to GND when pressed. The TFT may need a resistor for a bare backlight
+LED, but many TFT breakout boards already include one; check the module.
+
+Typical connections used by this project
+----------------------------------------
+TFT to ESP32:
+  TFT VCC   -> supply required by the specific display module
+  TFT GND   -> ESP32 GND
+  TFT CS    -> GPIO 13
+  TFT D/C   -> GPIO 27
+  TFT MOSI  -> GPIO 23
+  TFT SCK   -> GPIO 18
+  TFT RST   -> optional on a physical module; connect to the module's reset
+               input as required, or use the display library's software reset.
+  TFT MISO  -> optional if the project does not read data from the display.
+  TFT LED   -> backlight supply required by the specific display module
+
+Buttons (use the ESP32's internal pull-ups; the other side of each button goes
+to GND):
+  Emergency -> GPIO 32
+  Water     -> GPIO 33
+  Washroom  -> GPIO 25
+  Food      -> GPIO 14
+
+Electrical safety
+-----------------
+- ESP32 GPIO pins use 3.3 V logic and are not 5 V tolerant. Never connect 5 V
+  directly to an ESP32 GPIO.
+- TFT breakout boards differ: check the exact module's supply and logic-level
+  requirements before wiring. Use a suitable level shifter if the display's
+  SPI inputs require 5 V logic.
+- Do not assume the ESP32 VIN/5V pin is a regulated 5 V output when the board
+  is powered in a different way. Follow the board and display manufacturers'
+  wiring/power specifications.
+- The buttons in this project are separate push buttons. The colored button
+  shapes drawn on the TFT are visual only; the display is not a touchscreen.

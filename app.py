@@ -143,7 +143,7 @@ def send_audio_alert(chat_id: str, text: str):
 
 def send_voice_call(phone_number: str, text: str):
     """Place a call and speak the same alert text using a trial-safe URL webhook."""
-    if not all((TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, phone_number)) or TWILIO_ACCOUNT_SID == "YOUR_TWILIO_SID_HERE":
+    if not all((TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, phone_number)):
         print("[Call] Skipped: Twilio credentials or recipient phone number is missing.")
         return
 
@@ -212,7 +212,7 @@ def handle_triage(event_raw: str):
 if __name__ == "__main__":
     validate_configuration()
     init_telegram_offset()
-    print("Connecting to Wokwi Simulator bridge on port 4000...")
+    print(f"Connecting to serial endpoint {WOKWI_PORT}...")
     try:
         ser = serial.serial_for_url(WOKWI_PORT, baudrate=115200, timeout=0.1)
         print("Connected! Listening for patient bed signals...\n")
@@ -229,4 +229,4 @@ if __name__ == "__main__":
             time.sleep(0.5)
 
     except serial.SerialException:
-        print("Could not connect to Wokwi. Ensure the simulator is running first!")
+        print("Could not connect to the serial endpoint. Check WOKWI_PORT and ensure the simulator or ESP32 is available.")
