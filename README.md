@@ -9,7 +9,7 @@ alerts; Twilio phone calls can be enabled optionally.
 The PlatformIO project targets an ESP32 DevKit V1 (`esp32dev`). Open the project in
 PlatformIO to build the firmware. The Wokwi circuit is described in
 `diagram.json`; the simulator serial bridge defaults to
-`rfc2217://127.0.0.1:4000`.
+`socket://127.0.0.1:4000`.
 
 The ESP32 firmware handles the display and buttons and sends `ALERT:` messages
 over serial. `app.py` remains a PC-side service for Telegram, Twilio, and audio
@@ -24,7 +24,8 @@ python -m pip install -r requirements.txt
 ```
 
 Set the required Telegram configuration in PowerShell before running `app.py`
-(see `Process.text` for the complete hardware and software build procedure):
+(see `info ++++/Process.text` for the complete hardware and software build
+procedure):
 
 ```powershell
 $env:TELEGRAM_BOT_TOKEN = "your-bot-token"
@@ -43,7 +44,8 @@ python app.py
 
 Outbound Twilio calls are optional. Set `TWILIO_ACCOUNT_SID`,
 `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `CAREGIVER_PHONE_NUMBER`, and
-`DOCTOR_PHONE_NUMBER` in the environment to enable them. Set `WOKWI_PORT` to
+`DOCTOR_PHONE_NUMBER` in the environment to enable them. Set
+`SAFETY_MANAGER_PHONE` to enable the fire-hazard call. Set `WOKWI_PORT` to
 override the default serial endpoint.
 
 Do not commit credentials, chat identifiers, or phone numbers. Credentials

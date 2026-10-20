@@ -2,7 +2,6 @@ import os
 import time
 import io
 import urllib.parse
-from xml.sax.saxutils import escape
 from gtts import gTTS
 import pygame
 import requests
@@ -11,17 +10,17 @@ import serial
 # --- Configuration ---
 WOKWI_PORT = os.getenv("WOKWI_PORT", "socket://127.0.0.1:4000")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-
 CAREGIVER_CHAT_ID = os.getenv("TELEGRAM_CAREGIVER_CHAT_ID", "")
 DOCTOR_CHAT_ID = os.getenv("TELEGRAM_DOCTOR_CHAT_ID", "")
 
-# Twilio configuration for outbound phone calls.
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
 
+# Contact Numbers
 CAREGIVER_PHONE_NUMBER = os.getenv("CAREGIVER_PHONE_NUMBER", "")
 DOCTOR_PHONE_NUMBER = os.getenv("DOCTOR_PHONE_NUMBER", "")
+SAFETY_MANAGER_PHONE = os.getenv("SAFETY_MANAGER_PHONE", "")
 
 PHONE_NUMBERS_BY_CHAT = {
     CAREGIVER_CHAT_ID: CAREGIVER_PHONE_NUMBER,
@@ -33,18 +32,6 @@ pygame.mixer.init()
 # --- System State Variables ---
 waiting_for_reply = False
 last_update_id = None
-
-def validate_configuration():
-    required_settings = {
-        "TELEGRAM_BOT_TOKEN": BOT_TOKEN,
-        "TELEGRAM_CAREGIVER_CHAT_ID": CAREGIVER_CHAT_ID,
-        "TELEGRAM_DOCTOR_CHAT_ID": DOCTOR_CHAT_ID,
-    }
-    missing_settings = [name for name, value in required_settings.items() if not value]
-    if missing_settings:
-        raise RuntimeError(
-            "Set the required environment variables: " + ", ".join(missing_settings)
-        )
 
 def init_telegram_offset():
     """Clears old Telegram messages."""
@@ -58,7 +45,7 @@ def init_telegram_offset():
         pass
 
 def check_telegram_replies():
-    """Polls Telegram for text replies from either caregiver or doctor."""
+    """Polls Telegram for text replies from staff."""
     global last_update_id, waiting_for_reply
     
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
@@ -77,17 +64,13 @@ def check_telegram_replies():
                     sender = result["message"]["from"]["first_name"]
                     print(f"\n[{sender} Replied]: {reply_text}")
                     
-                    # Convert text to audio and play it 3 times on PC
                     play_reply_audio(f"{sender} says: {reply_text}")
-                    
-                    # Unlock system
                     waiting_for_reply = False
                     print("[System] Alert resolved. Ready for new patient requests.\n")
     except requests.exceptions.RequestException:
         pass 
 
 def play_reply_audio(text: str):
-    """Plays the received text reply 3 times on the local system."""
     print("[Bedside Speaker] Announcing reply...")
     try:
         tts = gTTS(text=text, lang="en")
@@ -95,7 +78,6 @@ def play_reply_audio(text: str):
         tts.save(temp_file)
 
         for i in range(1, 4):
-            print(f" -> Playback {i} of 3")
             pygame.mixer.music.load(temp_file)
             pygame.mixer.music.play()
             while pygame.mixer.music.get_busy():
@@ -109,7 +91,6 @@ def play_reply_audio(text: str):
         print(f"[Audio Error]: {e}")
 
 def play_local_bedside_speaker(tts_text: str):
-    """Plays the initial outgoing alert confirmation on PC."""
     try:
         tts = gTTS(text=tts_text, lang="en")
         temp_file = "bedside_alert.mp3"
@@ -142,14 +123,10 @@ def send_audio_alert(chat_id: str, text: str):
         pass
 
 def send_voice_call(phone_number: str, text: str):
-    """Place a call and speak the same alert text using a trial-safe URL webhook."""
     if not all((TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, phone_number)):
-        print("[Call] Skipped: Twilio credentials or recipient phone number is missing.")
         return
 
     url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Calls.json"
-    
-    # Generate a standard TwiML payload (no premium voices) and encode it into a Twimlet URL
     twiml_payload = f"<Response><Say>{text}</Say></Response>"
     safe_url = f"http://twimlets.com/echo?Twiml={urllib.parse.quote(twiml_payload)}"
 
@@ -161,7 +138,7 @@ def send_voice_call(phone_number: str, text: str):
             timeout=10,
         )
         response.raise_for_status()
-        print(f"[Call] Started for {phone_number}.")
+        print(f"[Call] Voice call dispatched to {phone_number}.")
     except requests.RequestException as error:
         print(f"[Call Error] Could not call {phone_number}: {error}")
 
@@ -169,13 +146,25 @@ def handle_triage(event_raw: str):
     global waiting_for_reply
     print(f"\n[Processing Event] {event_raw}")
 
-    # Determine message content and target audience based on button pressed
+    # --- FIRE HAZARD ESCALATION (Direct to Safety Manager) ---
+    if "FIRE_EMERGENCY" in event_raw:
+        voice_msg = "Critical fire hazard detected near OPD Bed 1. Immediate evacuation required."
+        print("\n🔥 [CRITICAL SAFETY EVENT] Calling Hospital Safety Manager directly...")
+        play_local_bedside_speaker(voice_msg)
+        send_voice_call(SAFETY_MANAGER_PHONE, voice_msg)
+        return
+
     target_chats = [CAREGIVER_CHAT_ID] 
 
-    if "EMERGENCY" in event_raw:
+    # --- FALL DETECTION ESCALATION (Direct to Caregiver) ---
+    if "FALL_DETECTED" in event_raw:
+        text_msg = "⚠️ [CRITICAL FALL ALERT] Sudden fall or abnormal bed motion detected at Bed 1!"
+        voice_msg = "Critical alert! Patient in Bed 1 has experienced a fall. Caregiver assistance required immediately."
+        print("\n⚠️ [FALL DETECTED] Alerting Caregiver immediately...")
+    elif "EMERGENCY" in event_raw:
         text_msg = "🚨 [CRITICAL ALERT] Patient Bed 1 triggered EMERGENCY!"
         voice_msg = "Emergency alert! Patient in Bed 1 requires immediate assistance."
-        target_chats.append(DOCTOR_CHAT_ID) # Add doctor to routing
+        target_chats.append(DOCTOR_CHAT_ID)
     elif "WATER" in event_raw:
         text_msg = "💧 [LOW PRIORITY] Patient Bed 1 requested Water."
         voice_msg = "Patient in Bed 1 has requested a glass of water."
@@ -190,19 +179,18 @@ def handle_triage(event_raw: str):
         voice_msg = f"New notification: {event_raw}"
 
     waiting_for_reply = True
-    print("[System] Alert locked. Dispatching 5 alerts to designated personnel...")
+    print("[System] Alert locked. Dispatching alerts to designated personnel...")
 
     play_local_bedside_speaker(voice_msg)
 
-    # Spam the alert 5 times to the designated targets
     for i in range(5):
         print(f"Dispatching alert wave {i+1}/5...")
         for chat_id in target_chats:
             send_text_alert(chat_id, text_msg)
             send_audio_alert(chat_id, voice_msg)
-        time.sleep(2) # Wait 2 seconds between blasts to avoid Telegram rate limits
+        time.sleep(2)
 
-    print("[System] Five alert waves complete. Calling designated personnel...")
+    print("[System] Alert waves complete. Placing Twilio voice calls...")
     for chat_id in target_chats:
         phone_number = PHONE_NUMBERS_BY_CHAT.get(chat_id, "")
         send_voice_call(phone_number, voice_msg)
@@ -210,7 +198,6 @@ def handle_triage(event_raw: str):
     print("[System] All alerts sent. Waiting for reply...")
 
 if __name__ == "__main__":
-    validate_configuration()
     init_telegram_offset()
     print(f"Connecting to serial endpoint {WOKWI_PORT}...")
     try:
@@ -229,4 +216,4 @@ if __name__ == "__main__":
             time.sleep(0.5)
 
     except serial.SerialException:
-        print("Could not connect to the serial endpoint. Check WOKWI_PORT and ensure the simulator or ESP32 is available.")
+        print("Could not connect to the serial endpoint. Check WOKWI_PORT.")

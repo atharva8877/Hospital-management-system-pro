@@ -2,31 +2,36 @@
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
-                                    
-// --- ESP32 DevKit V1 TFT pins (from diagram.json) ---
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
+
+// --- ESP32 DevKit V1 TFT pins ---
 #define TFT_CS   13
 #define TFT_DC   27
 #define TFT_MOSI 23
 #define TFT_SCK  18
 
-// --- ESP32 DevKit V1 physical button pins (from diagram.json) ---
-#define BTN_EMERGENCY 32
-#define BTN_WATER     33
-#define BTN_WASHROOM  25
-#define BTN_FOOD      14
-#define STATUS_LED    4
+// --- Sensor & Button Pins ---
+#define BTN_EMERGENCY   32
+#define BTN_WATER       33
+#define BTN_WASHROOM    25
+#define BTN_FOOD        14
+#define FIRE_SENSOR_PIN 12   // IR Flame Sensor Module (Digital DO)
+#define STATUS_LED      4
 
-// --- Initialize TFT ---
+// --- Initialize TFT & MPU6050 ---
 Adafruit_ILI9341 tft = Adafruit_ILI9341(&SPI, TFT_DC, TFT_CS);
+Adafruit_MPU6050 mpu;
 
-// --- TFT Button Coordinates & Dimensions ---
+// --- TFT Layout Dimensions ---
 #define BTN_X 20
 #define BTN_W 200
-#define BTN_H 45
+#define BTN_H 38
 
-#define Y_EMERGENCY 40
-#define Y_WATER     95
-#define Y_FOOD      150
+#define Y_FIRE      10
+#define Y_EMERGENCY 55
+#define Y_WATER     105
+#define Y_FOOD      155
 #define Y_WASHROOM  205
 
 static const uint8_t buttonPins[] = {
@@ -43,66 +48,78 @@ static const char* const alertNames[] = {
   "WASHROOM",
 };
 
-// --- FUNCTION PROTOTYPES (Required for PlatformIO) ---
+// --- FUNCTION PROTOTYPES ---
 void drawMainMenu();
 void triggerAlert(const char* alertType);
 int getPhysicalButtonAlert();
+void checkSafetySensors();
 
 void setup() {
   Serial.begin(115200);
   delay(500);
-  Serial.println("BOOT: ESP32 patient alert firmware");
+  Serial.println("BOOT: ESP32 SmartCare Triage & Safety Node");
 
-  // Initialize Physical Buttons with Internal Pull-Ups
+  // Initialize Pins
   pinMode(BTN_EMERGENCY, INPUT_PULLUP);
   pinMode(BTN_WATER, INPUT_PULLUP);
   pinMode(BTN_WASHROOM, INPUT_PULLUP);
   pinMode(BTN_FOOD, INPUT_PULLUP);
+  pinMode(FIRE_SENSOR_PIN, INPUT_PULLUP);
   pinMode(STATUS_LED, OUTPUT);
   digitalWrite(STATUS_LED, LOW);
 
-  // Use the same explicit VSPI pins that are wired in diagram.json.
+  // Initialize I2C and MPU6050 (SDA=21, SCL=22)
+  Wire.begin(21, 22);
+  if (!mpu.begin()) {
+    Serial.println("WARNING: MPU6050 not detected. Fall detection inactive.");
+  } else {
+    Serial.println("MPU6050 Initialized.");
+    mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+  }
+
+  // Initialize SPI Display
   SPI.begin(TFT_SCK, -1, TFT_MOSI, TFT_CS);
-  Serial.println("BOOT: starting ILI9341");
   tft.begin(8000000);
-  Serial.println("BOOT: ILI9341 initialized");
-  tft.setRotation(0); // Portrait mode (240x320)
-  Serial.println("BOOT: rotation set");
+  tft.setRotation(0);
   
   drawMainMenu();
-  Serial.println("BOOT: menu drawn");
   digitalWrite(STATUS_LED, HIGH);
-  Serial.println("BOOT: status LED on");
   Serial.println("System Ready.");
 }
 
 void drawMainMenu() {
   tft.fillScreen(ILI9341_BLACK);
   
-  // Title
-  tft.setCursor(25, 10);
+  tft.setCursor(20, 10);
   tft.setTextColor(ILI9341_WHITE);
   tft.setTextSize(2);
-  tft.print("PATIENT TRIAGE");
+  tft.print("SMARTCARE");
 
-  // 1. Emergency Button (Red)
-  tft.fillRoundRect(BTN_X, Y_EMERGENCY, BTN_W, BTN_H, 10, ILI9341_RED);
-  tft.setCursor(BTN_X + 40, Y_EMERGENCY + 15);
+  // Fire Hazard Banner
+  tft.fillRoundRect(BTN_X, Y_FIRE, BTN_W, 30, 6, 0xFD20);
+  tft.setCursor(BTN_X + 25, Y_FIRE + 8);
+  tft.setTextSize(1);
+  tft.print("FIRE & FALL SENSORS ACTIVE");
+
+  // Emergency Button
+  tft.fillRoundRect(BTN_X, Y_EMERGENCY, BTN_W, BTN_H, 8, ILI9341_RED);
+  tft.setCursor(BTN_X + 45, Y_EMERGENCY + 12);
+  tft.setTextSize(2);
   tft.print("EMERGENCY");
 
-  // 2. Water Button (Blue)
-  tft.fillRoundRect(BTN_X, Y_WATER, BTN_W, BTN_H, 10, ILI9341_BLUE);
-  tft.setCursor(BTN_X + 65, Y_WATER + 15);
+  // Water Button
+  tft.fillRoundRect(BTN_X, Y_WATER, BTN_W, BTN_H, 8, ILI9341_BLUE);
+  tft.setCursor(BTN_X + 75, Y_WATER + 12);
   tft.print("WATER");
 
-  // 3. Food Button (Orange)
-  tft.fillRoundRect(BTN_X, Y_FOOD, BTN_W, BTN_H, 10, ILI9341_ORANGE);
-  tft.setCursor(BTN_X + 75, Y_FOOD + 15);
+  // Food Button
+  tft.fillRoundRect(BTN_X, Y_FOOD, BTN_W, BTN_H, 8, ILI9341_ORANGE);
+  tft.setCursor(BTN_X + 75, Y_FOOD + 12);
   tft.print("FOOD");
 
-  // 4. Washroom Button (Green)
-  tft.fillRoundRect(BTN_X, Y_WASHROOM, BTN_W, BTN_H, 10, 0x07E0);
-  tft.setCursor(BTN_X + 50, Y_WASHROOM + 15);
+  // Washroom Button
+  tft.fillRoundRect(BTN_X, Y_WASHROOM, BTN_W, BTN_H, 8, 0x07E0);
+  tft.setCursor(BTN_X + 45, Y_WASHROOM + 12);
   tft.print("WASHROOM");
 }
 
@@ -110,25 +127,22 @@ void triggerAlert(const char* alertType) {
   static unsigned long lastAlertMs = 0;
   unsigned long now = millis();
 
-  // Prevent retriggering while the same input remains active.
   if (now - lastAlertMs < 500) {
     return;
   }
   lastAlertMs = now;
 
-  // Transmit the alert over Serial for the Python backend
   Serial.print("ALERT:");
   Serial.println(alertType);
   
-  // Provide visual feedback to the patient
   tft.fillScreen(ILI9341_BLACK);
-  tft.setCursor(30, 150);
-  tft.setTextColor(ILI9341_WHITE);
+  tft.setCursor(20, 140);
+  tft.setTextColor(ILI9341_RED);
   tft.setTextSize(3);
   tft.print("SENT!");
   
-  delay(2000); // Lock screen for 2 seconds
-  drawMainMenu(); // Redraw the UI
+  delay(2000);
+  drawMainMenu();
 }
 
 int getPhysicalButtonAlert() {
@@ -139,38 +153,55 @@ int getPhysicalButtonAlert() {
 
     if (isPressed && !buttonState[i]) {
       buttonState[i] = true;
-      Serial.print("Button pressed: ");
-      Serial.println(alertNames[i]);
       return i;
     }
-
     if (!isPressed) {
       buttonState[i] = false;
     }
   }
-
   return -1;
 }
 
-void loop() {
-  static unsigned long lastStatusMs = 0;
-  if (millis() - lastStatusMs >= 2000) {
-    Serial.print("STATUS: buttons emergency/water/washroom/food=");
-    Serial.print(digitalRead(BTN_EMERGENCY));
-    Serial.print(',');
-    Serial.print(digitalRead(BTN_WATER));
-    Serial.print(',');
-    Serial.print(digitalRead(BTN_WASHROOM));
-    Serial.print(',');
-    Serial.println(digitalRead(BTN_FOOD));
-    lastStatusMs = millis();
+void checkSafetySensors() {
+  static bool fireTriggered = false;
+  static bool fallTriggered = false;
+
+  // 1. Check IR Flame Sensor (Active LOW)
+  if (digitalRead(FIRE_SENSOR_PIN) == LOW) {
+    if (!fireTriggered) {
+      fireTriggered = true;
+      triggerAlert("FIRE_EMERGENCY");
+    }
+  } else {
+    fireTriggered = false;
   }
 
-  // Check physical pushbuttons (single trigger per press).
+  // 2. Check MPU6050 Fall Detection / Sudden Bed Motion
+  sensors_event_t a, g, temp;
+  if (mpu.getEvent(&a, &g, &temp)) {
+    float accelMag = sqrt(a.acceleration.x * a.acceleration.x +
+                          a.acceleration.y * a.acceleration.y +
+                          a.acceleration.z * a.acceleration.z);
+
+    // Threshold ~2.5G impact magnitude representing a fall
+    if (accelMag > 25.0) {
+      if (!fallTriggered) {
+        fallTriggered = true;
+        triggerAlert("FALL_DETECTED");
+      }
+    } else {
+      fallTriggered = false;
+    }
+  }
+}
+
+void loop() {
+  checkSafetySensors();
+
   int physicalIndex = getPhysicalButtonAlert();
   if (physicalIndex >= 0) {
     triggerAlert(alertNames[physicalIndex]);
-    delay(150); // Debounce after a physical button press
+    delay(150);
     return;
   }
 }
